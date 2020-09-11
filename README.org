@@ -30,23 +30,23 @@ at =DEST-REPO-DIR=. If =DEST-REPO-DIR= is an existing local git repository,
 
 Optional arguments:
 
-    =-h=                      Display this help and exit
-    =-b|--branch=             The source repository branch, default to =master=
-    =-d|--dest-dir DEST-DIR=  Move =PATH...= into =DEST-REPO-DIR/DEST-DIR=.
-                              If this option is absent, don't move,
-                              i.e., keep the original sub directories;
-                              the value =.= means moving =PATH...= to root
-                              in =DEST-REPO-DIR=.
-    =-m|--merge-subtree=      Don't rebase, but merge the sub tree into
-                              repository =DEST-REPO-DIR= (I personally
-                              prefer rebase). This option applies only
-                              when exporting to an existing repository.
+    - =-h=                      Display this help and exit
+    - =-b|--branch=             The source repository branch, default to =master=
+    - =-d|--dest-dir DEST-DIR=  Move =PATH...= into =DEST-REPO-DIR/DEST-DIR=.
+                                If this option is absent, don't move,
+                                i.e., keep the original sub directories;
+                                the value =.= means moving =PATH...= to root
+                                in =DEST-REPO-DIR=.
+    - =-m|--merge-subtree=      Don't rebase, but merge the sub tree into
+                                repository =DEST-REPO-DIR= (I personally
+                                prefer rebase). This option applies only
+                                when exporting to an existing repository.
 
 Positional arguments:
 
-    =SOURCE-URL=     The source git repository to extract =PATH...= from
-    =DEST-REPO-DIR=  The local directory of destination git repository
-                     to export =PATH...= into
+    - =SOURCE-URL=     The source git repository to extract =PATH...= from
+    - =DEST-REPO-DIR=  The local directory of destination git repository
+                       to export =PATH...= into
 
-    =PATH...=        The paths to export. =PATH=... are relative to the source
-                     repository root directory.
+    - =PATH...=        The paths to export. =PATH=... are relative to the source
+                       repository root directory.
