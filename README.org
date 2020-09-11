@@ -1,0 +1,52 @@
+#+STARTUP: indent
+
+* Summary
+=git-export-path= can be used to export files and/or directories from one Git
+repository into a new or existing Git repository (under any sub-directory).
+
+* Requirements
+- Operating system: Linux
+- Bash: a reasonably newer version
+- Git: a reasonably newer version
+
+* Usage
+=git-export-path= has fairly informative help, just typing:
+#+begin_src bash
+  git-export-path -h
+#+end_src
+
+The command syntax is:
+#+begin_src bash
+  git-export-path [-h|--help]
+  git-export-path [OPTIONS] SOURCE-URL DEST-REPO-DIR PATH...
+#+end_src
+
+This will export =PATH...= from git repository =SOURCE-URL=, into git repository
+at =DEST-REPO-DIR=. If =DEST-REPO-DIR= is an existing local git repository,
+=PATH...= will be exported into the the existing repository, in
+=DEST-REPO-DIR/DEST-DIR= directory; otherwise, a new git repository at
+=DEST-REPO-DIR= will be generated, with =PATH...= imported in
+=DEST-REPO-DIR/DEST-DIR=.
+
+Optional arguments:
+
+    =-h=                      Display this help and exit
+    =-b|--branch=             The source repository branch, default to =master=
+    =-d|--dest-dir DEST-DIR=  Move =PATH...= into =DEST-REPO-DIR/DEST-DIR=.
+                              If this option is absent, don't move,
+                              i.e., keep the original sub directories;
+                              the value =.= means moving =PATH...= to root
+                              in =DEST-REPO-DIR=.
+    =-m|--merge-subtree=      Don't rebase, but merge the sub tree into
+                              repository =DEST-REPO-DIR= (I personally
+                              prefer rebase). This option applies only
+                              when exporting to an existing repository.
+
+Positional arguments:
+
+    =SOURCE-URL=     The source git repository to extract =PATH...= from
+    =DEST-REPO-DIR=  The local directory of destination git repository
+                     to export =PATH...= into
+
+    =PATH...=        The paths to export. =PATH=... are relative to the source
+                     repository root directory.

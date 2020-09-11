@@ -1,0 +1,347 @@
+#!/bin/bash -e
+
+# Author: York Zhao <gtdplatform@gmail.com>
+# Maintainer: York Zhao <gtdplatform@gmail.com>
+
+# Version: 1.0.0
+
+#
+# Optional post exporting:
+#
+# If you need to revise the commit messages, manually perform an
+# interactive rebase.
+
+# License:
+
+# git-export-path is free software: you can redistribute it and/or
+# modify it under the terms of the GNU General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# git-export-path is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+# General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with git-export-path. If not, see
+# <http://www.gnu.org/licenses/>.
+#
+
+function show_help()
+{
+    local cmd=$1
+
+    cat <<EOF
+Usage: ${cmd} [-h|--help]
+       ${cmd} [OPTIONS] SOURCE-URL DEST-REPO-DIR PATH...
+
+Export PATH... from git repository SOURCE-URL, into git repository at
+DEST-REPO-DIR. If DEST-REPO-DIR is an existing local git repository,
+PATH... will be exported into the the existing repository, in
+DEST-REPO-DIR/DEST-DIR directory; otherwise, a new git repository at
+DEST-REPO-DIR will be generated, with PATH... imported in
+DEST-REPO-DIR/DEST-DIR.
+
+Optional arguments:
+
+    -h                      Display this help and exit
+    -b|--branch             The source repository branch, default to "master"
+    -d|--dest-dir DEST-DIR  Move PATH... into DEST-REPO-DIR/DEST-DIR.
+                            If this option is absent, don't move,
+                            i.e., keep the original sub directories;
+                            the value "." means moving PATH... to root
+                            in DEST-REPO-DIR.
+    -m|--merge-subtree      Don't rebase, but merge the sub tree into
+                            repository DEST-REPO-DIR (I personally
+                            prefer rebase). This option applies only
+                            when exporting to an existing repository.
+
+Positional arguments:
+
+    SOURCE-URL     The source git repository to extract PATH... from
+    DEST-REPO-DIR  The local directory of destination git repository
+                   to export PATH... into
+
+    PATH...        The paths to export. PATH... are relative to the
+                   source repository root directory.
+EOF
+
+    return 0
+}
+
+
+function parse_args()
+{
+    local cmd=${1}
+    local curr_posi_arg=1
+    src=""
+    branch="master"
+    dest=""
+    paths=()
+    dest_dir=""
+    merge_subtree=0
+    while :; do
+        shift
+        arg=$1
+        case ${arg} in
+            -h | --help)
+                show_help "${cmd}"
+                exit 0
+                ;;
+            -b | --branch)
+                if [[ ! "$2" ]]; then
+                    printf "Please specify the branch name\n" >&2
+                    return 22       # EINVAL
+                fi
+                shift
+                branch=$1
+                ;;
+            -b?*)
+                branch=${arg#-b}
+                ;;
+            --branch=?*)
+                branch=${arg#?*=}
+                ;;
+            --branch= )
+                printf "Please specify the branch name\n" >&2
+                return 22       # EINVAL
+                ;;
+            -d | --dest-dir)
+                if [[ ! "$2" ]]; then
+                    printf "Please specify the destination directory\n" >&2
+                    return 22       # EINVAL
+                fi
+                shift
+                dest_dir=$1
+                ;;
+            -d?*)
+                dest_dir=${arg#-d}
+                ;;
+            --dest-dir=?*)
+                dest_dir=${arg#?*=}
+                ;;
+            --dest-dir= )
+                printf "Please specify the destination directory\n" >&2
+                return 22       # EINVAL
+                ;;
+            -m|--merge-subtree)
+                merge_subtree=1
+                ;;
+            "")
+                break
+                ;;
+            *)
+                if (( curr_posi_arg == 1 )); then
+                    src=$1
+                    (( ++curr_posi_arg ))
+                    continue
+                fi
+
+                if (( curr_posi_arg == 2 )); then
+                    dest=$1
+                    (( ++curr_posi_arg ))
+                    continue
+                fi
+
+                paths=("$@")
+                shift $(( $# - 1 ))
+        esac
+    done
+
+    return 0
+}
+
+
+function delete_dest_repo()
+{
+    if (( create_new_repo )); then
+        printf "Delete \"%s\" repo on failure\n" "${dest}"
+        rm -rf "${dest}"
+    fi
+}
+
+
+function is_complete_git_repo()
+{
+    local dir=$1
+    local ret=0
+
+    [[ -r "${dir}/.git" ]] || return 1
+
+    pushd "${dir}" >/dev/null
+    git rev-parse --git-dir &>/dev/null
+    ret=$?
+    if (( ret )) ; then
+        printf "No git repository at \"%s\"\n" "${dir}" >&2
+    fi
+    popd >/dev/null
+    return ${ret}
+}
+
+
+function get_root_commits()
+{
+    local branch=$1
+    local repo_dir=${2:-.}
+    pushd "${repo_dir}" >/dev/null
+    read -ra roots <<<"$(git rev-list --max-parents=0 --abbrev-commit "${branch}")"
+    popd >/dev/null
+}
+
+
+function move_paths()
+{
+    local dest_dir=$1
+    shift
+    local -a paths=("$@")
+    local -a srcs=()
+
+    for path in "${paths[@]}"; do
+        if [[ -d "${dest_dir}/$(basename "${path}")" ]]; then
+            srcs+=("${path}/*")
+        else
+            srcs+=("${path}")
+        fi
+    done
+    git filter-branch -f --tree-filter \
+        "[ -d ${dest_dir} ] || mkdir ${dest_dir}; git mv ${srcs[*]} ${dest_dir}" \
+        --prune-empty HEAD
+}
+
+
+function set_committer_date_to_author_date()
+{
+    local repo_dir=$1
+
+    pushd "${repo_dir}" >/dev/null
+    git filter-branch -f --env-filter \
+        'GIT_COMMITTER_DATE=$GIT_AUTHOR_DATE; export GIT_COMMITTER_DATE'
+    popd >/dev/null
+}
+
+#Main entry
+
+cmd_path=$(readlink -f "$0")
+cmd=$(basename "${cmd_path}")
+
+parse_args "${cmd}" "$@"
+
+# Validate arguments
+#
+if [[ -z ${src} ]]; then
+    printf "Must specify source repository\n" >&2
+    exit 1
+fi
+
+if [[ -z ${dest} ]]; then
+    printf "Must specify destination repository\n" >&2
+    exit 1
+fi
+
+if [[ -d ${dest} ]] && ! is_complete_git_repo "${dest}"; then
+    is_delete_dir=no
+    msg=("Directory ${dest} already exist, and is not a git repository,"
+         "delete it? (\"yes\" or \"no\") ")
+    read -rp "${msg[*]} " is_delete_dir
+    is_delete_dir=${is_delete_dir,,} # Convert to lower case
+    if [[ "${is_delete_dir}" != "yes" ]]; then
+        printf "Destination directory \"%s\" already exist, exit\n" "${dest}" >&2
+        exit 1
+    fi
+
+    rm -rf "${dest}"
+fi
+
+[[ -d "${dest}" ]] && create_new_repo=0 || create_new_repo=1
+
+if (( create_new_repo )); then
+    trap delete_dest_repo EXIT
+fi
+
+if (( ${#paths[@]} == 0 )); then
+    printf "Must specify at least one path\n" >&2
+    exit 1
+fi
+
+# Clone the source repository into a temporary local directory
+#
+work_dir=$(mktemp -d /tmp/git-export-path-XXX)
+printf "\nCloning %s into %s\n" "${src}" "${work_dir}/src"
+git clone --no-local --branch "${branch}" "${src}" "${work_dir}/src"
+for path in "${paths[@]}"; do
+    if [[ ! -r "${work_dir}/src/${path}" ]]; then
+        printf "Error: path \"%s\" doesn't exist in source repo\n" "${path}" >&2
+        exit 1
+    fi
+done
+
+# Delete everything except PATHS
+#
+pushd "${work_dir}/src" >/dev/null
+git remote remove origin
+printf "\nFiltering out everything else in %s except the path(s) \"%s\"\n" \
+       "$(pwd)" "${paths[*]}"
+git filter-branch --index-filter                                     \
+    "git rm --cached -r -q .; git reset -q \$GIT_COMMIT ${paths[*]}" \
+    --prune-empty
+
+if [[ -n "${dest_dir}" ]]; then
+    # Move PATH... into sub directory DEST-DIR
+    printf "\nMoving path(s) \"%s\" into %s\n" \
+           "${paths[@]}" "${work_dir}/src/${dest_dir}"
+    move_paths "${dest_dir}" "${paths[@]}"
+fi
+
+# Rebase the repo onto the first commit to get rid of the useless
+# empty commits
+#
+get_root_commits "${branch}"
+if (( ${#root[@]} > 1 )); then
+    # This really should never happen
+    printf "Found %d root commits: %s\n" ${#root[@]} "${root[*]}" >&2
+    exit 1
+fi
+
+root=${roots[0]}
+printf "\nRebasing %s onto first commit to get rid of useless empty commits\n" \
+       "$(pwd)"
+git rebase "${root}"
+popd >/dev/null
+
+if (( create_new_repo )); then
+    # Creating the new repository by cloning from the temporary one to
+    # shrink down the repository size.
+    #
+    printf "\nShrinking down the repository size for %s\n" "${dest}"
+    git clone --no-local "${work_dir}/src" "${dest}"
+    rm -rf "${work_dir}/src" 
+    pushd "${dest}" >/dev/null
+    git remote remove origin
+    set_committer_date_to_author_date .
+    git gc --aggressive
+    git prune
+    popd >/dev/null
+else
+    # DEST already exists, and is a git repository, pull the exported
+    # temporary repository into DEST
+    pushd "${dest}" >/dev/null
+    git remote rm tmp-export-path-remote 2>/dev/null || true
+    git remote add tmp-export-path-remote "${work_dir}/src"
+    git branch -D tmp-export-path 2>/dev/null || true
+    git checkout -B tmp-export-path "${branch}"
+    printf "\nPulling %s into %s\n" "${work_dir}/src" "$(pwd)"
+    git pull --allow-unrelated-histories tmp-export-path-remote "${branch}"
+    git remote rm tmp-export-path-remote
+    if (( ! merge_subtree )); then
+        printf "Rebasing merged subtree onto %s\n" "${branch}"
+        git rebase "${branch}"
+    fi
+    popd >/dev/null
+fi
+
+new_or_exist=("new" "existing")
+printf "\nSuccessfully exported %s from %s into %s repository at %s\n" \
+       "${paths[@]}" "${src}" "${new_or_exist[create_new_repo]}" "${dest}"
+
+trap EXIT                       # Turn off EXIT trap
