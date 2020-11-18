@@ -205,7 +205,7 @@ function move_paths()
         fi
     done
     git filter-branch -f --tree-filter \
-        "[ -d ${dest_dir} ] || mkdir ${dest_dir}; git mv ${srcs[*]} ${dest_dir}" \
+        "mkdir -p ${dest_dir}; git mv ${srcs[*]} ${dest_dir}" \
         --prune-empty HEAD
 }
 
